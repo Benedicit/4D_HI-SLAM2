@@ -1,5 +1,5 @@
 #include <torch/extension.h>
-#include <THC/THCAtomics.cuh>
+#include <ATen/cuda/Atomic.cuh>
 #include <vector>
 #include <iostream>
 

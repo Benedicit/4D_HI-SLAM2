@@ -1,32 +1,27 @@
-name: hislam2
+name: hislam
 channels:
-  - rusty1s
-  - pytorch
-  - nvidia
   - conda-forge
-  - defaults
 dependencies:
-  - torchaudio
-  - torchvision
-  - pytorch=2.1.2
-  - pytorch-cuda=11.8
-  - cudatoolkit=11.8
-  - scipy
-  - opencv
-  - tqdm
+  - python=3.12
+  - cuda-toolkit=13.0
   - suitesparse
-  - matplotlib
-  - pyyaml
-  - lightning
-  - wheel
   - pip
   - pip:
-    - git+https://github.com/eriksandstroem/evaluate_3d_reconstruction_lib.git
-    - torch-scatter -f https://data.pyg.org/whl/torch-2.1.2+cu118.html
-    - thirdparty/simple-knn
-    - thirdparty/diff-gaussian-rasterization
+    - --extra-index-url https://download.pytorch.org/whl/cu130
+    - --find-links https://data.pyg.org/whl/torch-2.12.1+cu130.html
+    - torch==2.12.1
+    - torchvision
+    - torch-scatter
     - numpy==1.26.4
     - setuptools==69.5.1
+    - wheel
+    - ninja
+    - scipy
+    - opencv-python
+    - tqdm
+    - matplotlib
+    - pyyaml
+    - lightning
     - torchmetrics
     - pyrender
     - imgviz
@@ -38,3 +33,6 @@ dependencies:
     - rich
     - glfw
     - glm
+    - PyOpenGL
+    - trimesh
+    - git+https://github.com/eriksandstroem/evaluate_3d_reconstruction_lib.git

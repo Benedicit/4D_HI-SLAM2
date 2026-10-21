@@ -68,16 +68,22 @@ python setup.py install
 git clone --recursive https://github.com/Willyzw/HI-SLAM2
 ```
 
-2. Create a new Conda environment and then activate it. Please note that we use the PyTorch version compiled by CUDA 11.8 in the `environment.yaml` file.
+2. Create a new Conda environment and then activate it. It uses PyTorch 2.12.1 built with CUDA 13.0 and installs the CUDA 13.0 toolkit (`nvcc`) into the environment (NVIDIA driver >= 580 required).
 ```Bash
 conda env create -f environment.yaml
-conda activate hislam2
+conda activate hislam
 ```
 
-3. Compile the CUDA kernel extensions (takes about 10 minutes). Please note that this process assume you have CUDA 11 installed, not 12. To look into the installed CUDA version, you can run `nvcc --version` in the terminal.
+3. Compile the CUDA kernel extensions (takes about 10 minutes) for Ampere, Ada and Hopper GPUs (sm_80/86/89/90).
 ```Bash
+export CUDA_HOME=$CONDA_PREFIX TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0"
+pip install --no-build-isolation thirdparty/simple-knn
+NVCC_APPEND_FLAGS="$NVCC_APPEND_FLAGS -std=c++17 --pre-include=cstdint" pip install --no-build-isolation thirdparty/diff-gaussian-rasterization
 python setup.py install
 ```
+The extra flags build the rasterizer unmodified: PyTorch 2.12 compiles extensions as C++20 (its `helper_math.h` `lerp` clashes with `std::lerp`), and GCC >= 13 no longer includes `<cstdint>` transitively.
+
+> **CUDA 13 note:** compared to upstream (CUDA 11.8 / PyTorch 2.1.2), this fork changes: `setup.py` arch flags (CUDA 13 dropped sm < 75), `src/altcorr_kernel.cu` (`THC/THCAtomics.cuh` → `ATen/cuda/Atomic.cuh`), the `thirdparty/lietorch` submodule (bumped to `bf5f352`, replacing the removed `Tensor.type()` dispatch), `hislam2/midas/omnidata.py` (`torch.load(..., weights_only=False)`, required since PyTorch 2.6 for the Omnidata Lightning checkpoints), and the env files. PyTorch 2.12.1 is the newest version with prebuilt `torch-scatter` wheels.
 
 4. Download the pretrained weights of Omnidata models for generating depth and normal priors
 ```Bash
