@@ -99,7 +99,7 @@ class GSBackEnd(mp.Process):
             idx = idx.item()
             idx = packet['tstamp'][i].item()
             tstamp = packet['tstamp'][i].item()
-            viewpoint = Camera.init_from_tracking(packet["images"][i]/255.0, packet["depths"][i], packet["normals"][i], w2c[i], idx, self.projection_matrix, self.K, tstamp)
+            viewpoint = Camera.init_from_tracking(packet["images"][i].cuda()/255.0, packet["depths"][i].cuda(), packet["normals"][i].cuda(), w2c[i], idx, self.projection_matrix, self.K, tstamp)
             if idx not in self.current_window:
                 self.current_window = [idx] + self.current_window[:-1] if len(self.current_window) > 10 else [idx] + self.current_window
                 if not self.initialized:
@@ -128,7 +128,7 @@ class GSBackEnd(mp.Process):
                     keyframes=keyframes,
                     kf_window=current_window_dict,
                     gtcolor=viewpoint.original_image,
-                    gtdepth=viewpoint.depth.numpy()))
+                    gtdepth=viewpoint.depth.cpu().numpy()))
 
     def finalize(self):
         self.color_refinement(iteration_total=self.gaussians.max_steps)
@@ -177,10 +177,7 @@ class GSBackEnd(mp.Process):
             loss_init.backward()
 
             with torch.no_grad():
-                self.gaussians.max_radii2D[visibility_filter] = torch.max(
-                    self.gaussians.max_radii2D[visibility_filter],
-                    radii[visibility_filter],
-                )
+                torch.max(self.gaussians.max_radii2D, radii, out=self.gaussians.max_radii2D)
                 self.gaussians.add_densification_stats(
                     viewspace_point_tensor, visibility_filter
                 )
@@ -245,10 +242,7 @@ class GSBackEnd(mp.Process):
             ## Deinsifying / Pruning Gaussians
             with torch.no_grad():
                 for idx in range(len(viewspace_point_tensor_acm)):
-                    self.gaussians.max_radii2D[visibility_filter_acm[idx]] = torch.max(
-                        self.gaussians.max_radii2D[visibility_filter_acm[idx]],
-                        radii_acm[idx][visibility_filter_acm[idx]],
-                    )
+                    torch.max(self.gaussians.max_radii2D, radii_acm[idx], out=self.gaussians.max_radii2D)
                     self.gaussians.add_densification_stats(
                         viewspace_point_tensor_acm[idx], visibility_filter_acm[idx]
                     )
@@ -272,35 +266,27 @@ class GSBackEnd(mp.Process):
                 self.gaussians.optimizer.zero_grad(set_to_none=True)
                 # self.gaussians.update_learning_rate(self.iteration_count)
 
+
     def color_refinement(self, iteration_total):
         Log("Starting color refinement")
 
-        opt_params = []
-        for view in self.viewpoints.values():
-            opt_params.append({
-                    "params": [view.cam_rot_delta],
-                    "lr": self.config["opt_params"]["pose_lr"],
-                    "name": "rot_{}".format(view.uid)})
-            opt_params.append({
-                    "params": [view.cam_trans_delta],
-                    "lr": self.config["opt_params"]["pose_lr"],
-                    "name": "trans_{}".format(view.uid)})
-            if self.config["Training"]["compensate_exposure"]:
-                opt_params.append({
-                        "params": [view.exposure_a],
-                        "lr": self.config["opt_params"]["exposure_lr"],
-                        "name": "exposure_a_{}".format(view.uid)})
-                opt_params.append({
-                        "params": [view.exposure_b],
-                        "lr": self.config["opt_params"]["exposure_lr"],
-                        "name": "exposure_b_{}".format(view.uid)})
+        views = list(self.viewpoints.values())
+        opt_params = [
+            {"params": [v.cam_rot_delta for v in views], "lr": self.config["opt_params"]["pose_lr"], "name": "rot"},
+            {"params": [v.cam_trans_delta for v in views], "lr": self.config["opt_params"]["pose_lr"], "name": "trans"}]
+        if self.config["Training"]["compensate_exposure"]:
+            opt_params += [
+                {"params": [v.exposure_a for v in views], "lr": self.config["opt_params"]["exposure_lr"], "name": "exposure_a"},
+                {"params": [v.exposure_b for v in views], "lr": self.config["opt_params"]["exposure_lr"], "name": "exposure_b"}]
         self.keyframe_optimizers = torch.optim.Adam(opt_params)
 
         for iteration in (pbar := trange(1, iteration_total + 1)):
             viewpoint_idx_stack = list(self.viewpoints.keys())
             viewpoint_cam_idx = viewpoint_idx_stack.pop(random.randint(0, len(viewpoint_idx_stack) - 1))
             viewpoint_cam = self.viewpoints[viewpoint_cam_idx]
+
             render_pkg = render(viewpoint_cam, self.gaussians, self.background)
+
             image, depth = render_pkg["render"], render_pkg["depth"]
             image = (torch.exp(viewpoint_cam.exposure_a)) * image + viewpoint_cam.exposure_b
 

@@ -260,7 +260,7 @@ class GaussianModel:
             },
         ]
 
-        self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
+        self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15, fused=True)
         self.lr_init = training_args.position_lr_init * self.spatial_lr_scale
         self.lr_final = training_args.position_lr_final * self.spatial_lr_scale
         self.max_steps = training_args.position_lr_max_steps
@@ -568,7 +568,6 @@ class GaussianModel:
         self.prune_points(prune_mask)
 
     def add_densification_stats(self, viewspace_point_tensor, update_filter):
-        self.xyz_gradient_accum[update_filter] += torch.norm(
-            viewspace_point_tensor.grad[update_filter, :2], dim=-1, keepdim=True
-        )
-        self.denom[update_filter] += 1
+        update_filter = update_filter[:, None]
+        self.xyz_gradient_accum += torch.where(update_filter, torch.norm(viewspace_point_tensor.grad[:, :2], dim=-1, keepdim=True), 0.0)
+        self.denom += update_filter

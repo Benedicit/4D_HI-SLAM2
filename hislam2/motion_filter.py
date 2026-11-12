@@ -11,15 +11,12 @@ from modules.corr import CorrBlock
 from torchvision import transforms
 from midas.omnidata import OmnidataModel
 
-
 def sharpness(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return cv2.Laplacian(gray, cv2.CV_64F).var()
 
-
 class MotionFilter:
     """ This class is used to filter incoming frames and extract features """
-
     def __init__(self, net, video, config, device="cuda:0"):
         
         # split net modules
@@ -44,18 +41,18 @@ class MotionFilter:
         self.MEAN = torch.as_tensor([0.485, 0.456, 0.406], device=self.device)[:, None, None]
         self.STDV = torch.as_tensor([0.229, 0.224, 0.225], device=self.device)[:, None, None]
         
-    @torch.cuda.amp.autocast(enabled=True)
+    @torch.autocast(enabled=True, device_type="cuda", dtype=torch.float16)
     def context_encoder(self, image):
         """ context features """
         net, inp = self.cnet(image).split([128,128], dim=2)
         return net.tanh().squeeze(0), inp.relu().squeeze(0)
 
-    @torch.cuda.amp.autocast(enabled=True)
+    @torch.autocast(enabled=True, device_type="cuda", dtype=torch.float16)
     def feature_encoder(self, image):
         """ features for correlation volume """
         return self.fnet(image).squeeze(0)
 
-    @torch.cuda.amp.autocast(enabled=True)
+    @torch.autocast(enabled=True, device_type="cuda", dtype=torch.float16)
     @torch.no_grad()
     def prior_extractor(self, im_tensor):
         input_size = im_tensor.shape[-2:]
@@ -72,7 +69,7 @@ class MotionFilter:
         normal = normal.float().squeeze()
         return depth, normal
 
-    @torch.cuda.amp.autocast(enabled=True)
+    @torch.autocast(enabled=True, device_type="cuda", dtype=torch.float16)
     @torch.no_grad()
     def track(self, tstamp, image, intrinsics=None, is_last=False):
         """ main update operation - run on every frame in video """
@@ -82,7 +79,7 @@ class MotionFilter:
         wd = image.shape[-1] // 8
         intrinsics[:,:4] /= 8.0
 
-        s = sharpness(image[0].permute(1,2,0).cpu().numpy())
+        s = sharpness(image[0].permute(1,2,0).cpu().numpy()) if self.skip_blur else 0
 
         # normalize images
         inputs = image[None].to(self.device) / 255.0

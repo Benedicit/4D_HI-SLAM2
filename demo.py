@@ -15,7 +15,6 @@ resource.setrlimit(resource.RLIMIT_NOFILE, (100000, rlimit[1]))
 
 from tqdm import tqdm
 from torch.multiprocessing import Process, Queue
-from hi2 import Hi2
 
 
 def show_image(image, depth_prior, depth, normal):
@@ -105,6 +104,7 @@ if __name__ == '__main__':
     queue = Queue(maxsize=8)
     reader = Process(target=mono_stream, args=(queue, args.imagedir, args.calib, args.undistort, args.cropborder, args.start, args.length))
     reader.start()
+    from hi2 import Hi2
 
     N = len(os.listdir(args.imagedir))
     args.buffer = min(1000, N // 10 + 150) if args.buffer < 0 else args.buffer
@@ -130,6 +130,7 @@ if __name__ == '__main__':
             pbar.close()
             break
 
+    reader.terminate()
     reader.join()
 
     traj = hi2.terminate()

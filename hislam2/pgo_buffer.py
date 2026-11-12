@@ -81,7 +81,7 @@ class PGOBuffer:
         self.lcii = torch.as_tensor([], dtype=torch.long, device='cuda')
         self.lcjj = torch.as_tensor([], dtype=torch.long, device='cuda')
 
-    @torch.cuda.amp.autocast(enabled=False)
+    @torch.autocast(enabled=False, device_type="cuda")
     def add_rel_poses(self, ii, jj, target, weight):
         valid = (weight[0] > 0.1).float().mean([-3, -2, -1])
         masks = valid > 1e-2

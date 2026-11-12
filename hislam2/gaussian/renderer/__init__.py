@@ -30,6 +30,7 @@ def render(viewpoint_camera, pc : GaussianModel, bg_color : torch.Tensor, scalin
     except:
         pass
 
+    world_view_transform = viewpoint_camera.world_view_transform
     raster_settings = GaussianRasterizationSettings(
         image_height=int(viewpoint_camera.image_height),
         image_width=int(viewpoint_camera.image_width),
@@ -37,11 +38,11 @@ def render(viewpoint_camera, pc : GaussianModel, bg_color : torch.Tensor, scalin
         tanfovy=tanfovy,
         bg=bg_color,
         scale_modifier=scaling_modifier,
-        viewmatrix=viewpoint_camera.world_view_transform,
-        projmatrix=viewpoint_camera.full_proj_transform,
+        viewmatrix=world_view_transform,
+        projmatrix=world_view_transform.unsqueeze(0).bmm(viewpoint_camera.projection_matrix.unsqueeze(0)).squeeze(0),
         projmatrix_raw=viewpoint_camera.projection_matrix,
         sh_degree=pc.active_sh_degree,
-        campos=viewpoint_camera.camera_center
+        campos=world_view_transform.inverse()[3, :3]
     )
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)

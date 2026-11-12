@@ -41,13 +41,8 @@ class FactorGraph:
     def __filter_repeated_edges(self, ii, jj):
         """ remove duplicate edges """
 
-        keep = torch.zeros(ii.shape[0], dtype=torch.bool, device=ii.device)
-        eset = set(
-            [(i.item(), j.item()) for i, j in zip(self.ii, self.jj)] +
-            [(i.item(), j.item()) for i, j in zip(self.ii_inac, self.jj_inac)])
-
-        for k, (i, j) in enumerate(zip(ii, jj)):
-            keep[k] = (i.item(), j.item()) not in eset
+        eset = set(zip(self.ii.tolist(), self.jj.tolist())) | set(zip(self.ii_inac.tolist(), self.jj_inac.tolist()))
+        keep = torch.as_tensor([e not in eset for e in zip(ii.tolist(), jj.tolist())], dtype=torch.bool, device=ii.device)
 
         return ii[keep], jj[keep]
 
@@ -70,7 +65,7 @@ class FactorGraph:
         self.net = None
         self.inp = None
 
-    @torch.cuda.amp.autocast(enabled=True)
+    @torch.autocast(enabled=True, device_type="cuda", dtype=torch.float16)  
     def add_factors(self, ii, jj, remove=False):
         """ add edges to factor graph """
 
@@ -107,7 +102,7 @@ class FactorGraph:
             inp = self.video.inps[ii].to(self.device).unsqueeze(0)
             self.inp = inp if self.inp is None else torch.cat([self.inp, inp], 1)
 
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.autocast(enabled=False, device_type="cuda", dtype=torch.float16):
             target, _ = self.video.reproject(ii, jj)
             weight = torch.zeros_like(target)
 
@@ -121,7 +116,7 @@ class FactorGraph:
         self.target = torch.cat([self.target, target], 1)
         self.weight = torch.cat([self.weight, weight], 1)
 
-    @torch.cuda.amp.autocast(enabled=True)
+    @torch.autocast(enabled=True, device_type="cuda", dtype=torch.float16)
     def rm_factors(self, mask, store=False):
         """ drop edges from factor graph """
 
@@ -151,7 +146,7 @@ class FactorGraph:
         self.weight = self.weight[:,~mask]
 
 
-    @torch.cuda.amp.autocast(enabled=True)
+    @torch.autocast(enabled=True, device_type="cuda", dtype=torch.float16)
     def rm_keyframe(self, ix):
         """ drop edges from factor graph """
 
@@ -186,12 +181,12 @@ class FactorGraph:
         self.rm_factors(m, store=False)
 
 
-    @torch.cuda.amp.autocast(enabled=True)
+    @torch.autocast(enabled=True, device_type="cuda", dtype=torch.float16)
     def update(self, t0=None, t1=None, itrs=2, use_inactive=False, EP=1e-7, motion_only=False, use_mono=False):
         """ run update operator on factor graph """
 
         # motion features
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.autocast(enabled=False, device_type="cuda", dtype=torch.float16):
             coords1, mask = self.video.reproject(self.ii, self.jj)
             motn = torch.cat([coords1 - self.coords0, self.target - coords1], dim=-1)
             motn = motn.permute(0,1,4,2,3).clamp(-64.0, 64.0)
@@ -206,7 +201,7 @@ class FactorGraph:
             # fix at least the first two poses to keep mono scale
             t0 = max(2, self.ii.min().item()+1)
 
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.autocast(enabled=False, device_type="cuda", dtype=torch.float16):
             self.target = coords1 + delta.to(dtype=torch.float)
             self.weight = weight.to(dtype=torch.float)
             self.damping[torch.unique(self.ii)] = damping
@@ -233,7 +228,7 @@ class FactorGraph:
         self.age += 1
 
 
-    @torch.cuda.amp.autocast(enabled=False)
+    @torch.autocast(enabled=False, device_type="cuda", dtype=torch.float16)
     def update_lowmem(self, t0=None, t1=None, itrs=2, use_inactive=False, EP=1e-7, steps=8):
         """ run update operator on factor graph - reduced memory implementation """
 
@@ -245,7 +240,7 @@ class FactorGraph:
 
         for step in (pbar := trange(steps)):
             pbar.set_description(f"Global BA Iteration #{step+1} with {t} keyframes {len(self.ii)} edges")
-            with torch.cuda.amp.autocast(enabled=False):
+            with torch.autocast(enabled=False, device_type="cuda", dtype=torch.float16):
                 coords1, mask = self.video.reproject(self.ii, self.jj)
                 motn = torch.cat([coords1 - self.coords0, self.target - coords1], dim=-1)
                 motn = motn.permute(0,1,4,2,3).clamp(-64.0, 64.0)
@@ -259,7 +254,7 @@ class FactorGraph:
                 ht, wd = self.coords0.shape[0:2]
                 corr1 = corr_op(coords1[:,v], rig * iis, rig * jjs + (iis == jjs).long())
 
-                with torch.cuda.amp.autocast(enabled=True):
+                with torch.autocast(enabled=True, device_type="cuda", dtype=torch.float16):
                  
                     net, delta, weight, damping, upmask = \
                         self.update_op(self.net[:,v], self.video.inps[None,iis], corr1, motn[:,v], iis, jjs)
@@ -279,7 +274,7 @@ class FactorGraph:
 
             self.video.dirty[:t] = True
 
-    @torch.cuda.amp.autocast(enabled=True)
+    @torch.autocast(enabled=True, device_type="cuda", dtype=torch.float16)
     def update_pgba(self, t0=None, t1=None, itrs=2, EP=1e-7, steps=6):
         """ run update operator on factor graph - reduced memory implementation """
 
@@ -288,7 +283,7 @@ class FactorGraph:
             t1 = self.video.counter.value
 
         for step in range(steps):
-            with torch.cuda.amp.autocast(enabled=False):
+            with torch.autocast(enabled=False, device_type="cuda", dtype=torch.float16):
                 coords1, mask = self.video.reproject(self.ii, self.jj, sim3=True)
                 motn = torch.cat([coords1 - self.coords0, self.target - coords1], dim=-1)
                 motn = motn.permute(0,1,4,2,3).clamp(-64.0, 64.0)
@@ -298,7 +293,7 @@ class FactorGraph:
             self.net, delta, weight, damping, upmask = \
                 self.update_op(self.net, self.inp, corr, motn, self.ii, self.jj)
 
-            with torch.cuda.amp.autocast(enabled=False):
+            with torch.autocast(enabled=False, device_type="cuda", dtype=torch.float16):
                 self.target = coords1 + delta.to(dtype=torch.float)
                 self.weight = weight.to(dtype=torch.float)
                 self.damping[torch.unique(self.ii)] = damping
@@ -349,7 +344,7 @@ class FactorGraph:
 
         ii1 = torch.cat([self.ii, self.ii_inac], 0)
         jj1 = torch.cat([self.jj, self.jj_inac], 0)
-        for i, j in zip(ii1.cpu().numpy(), jj1.cpu().numpy()):
+        for i, j in zip(ii1.tolist(), jj1.tolist()):
             for di in range(-nms, nms+1):
                 for dj in range(-nms, nms+1):
                     if abs(di) + abs(dj) <= max(min(abs(i-j)-2, nms), 0):
@@ -377,7 +372,8 @@ class FactorGraph:
                 oris = np.linalg.norm(euls, axis=1)
                 d[d < thresh][oris > 150] = np.inf
 
-        ix = torch.argsort(d)
+        ix = torch.argsort(d).tolist()
+        d = d.cpu()
         for k in ix:
             if d[k].item() > thresh:
                 continue
@@ -385,8 +381,8 @@ class FactorGraph:
             if len(es) > self.max_factors:
                 break
 
-            i = ii[k]
-            j = jj[k]
+            i = ii[k].item()
+            j = jj[k].item()
             
             # bidirectional
             es.append((i, j))

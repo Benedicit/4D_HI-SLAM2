@@ -207,6 +207,7 @@ def get_loss_tracking_rgbd(
     return alpha * l1_rgb + (1 - alpha) * l1_depth.mean()
 
 
+@torch.compile()
 def get_loss_normal(depth_mean, viewpoint):
     prior_normal = viewpoint.normal.cuda()
     prior_normal = prior_normal.reshape(3, *depth_mean.shape[-2:]).permute(1,2,0)
@@ -230,6 +231,7 @@ def get_loss_mapping_rgb(config, image, depth, viewpoint):
     return l1_rgb.mean()
 
 
+@torch.compile()
 def get_loss_mapping_rgbd(config, image, depth, viewpoint):
     alpha = config["Training"]["alpha"] if "alpha" in config["Training"] else 0.95
     rgb_boundary_threshold = config["Training"]["rgb_boundary_threshold"]
